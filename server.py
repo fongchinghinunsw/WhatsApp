@@ -37,6 +37,10 @@ offlineMessageBox = {}
 # saves the last online time for all users.
 lastLoggedIn = {}
 
+# saves active p2p messaging user pairs
+# if A is having a p2p session with B, then either {A: [B]} or {B: [A]}
+activeP2PAccepting = []
+
 class User:
   def __init__(self, socket, address):
     self.username = None
@@ -169,7 +173,7 @@ def logout(user):
       onlineUsers.remove(onlineUser)
       lastLoggedIn[onlineUser.get_username()] = datetime.now()
 
-      user.send_prompt("WhatsApp: you have been logged out\n")
+      user.send_prompt("WhatsApp " + user.get_username() + " logout")
     else:
       onlineUser.send_prompt(user.get_username() + " has logged out\n")
 
@@ -359,19 +363,54 @@ def main_process(user):
 
     elif command.startswith("startprivate"):
       userComponent = retrieve_components(command)
+      print(userComponent)
 
-      if not is_existing_user(userComponent):
+      if not is_existing_user(userComponent, username2password):
         user.send_prompt("User doesn't exist\n")
+        t.cancel()
+        continue
+        
 
-      for onlineUser in onlineUsers:
-        if onlineUser.get_username() == userComponent:
-          if has_blocked(userComponent, user.get_username()):
-            user.send_prompt("Private message can't be established as you have been blocked\n")
+      if userComponent != user.get_username():
+
+        for onlineUser in onlineUsers:
+          if onlineUser.get_username() == userComponent:
+            if has_blocked(userComponent, user.get_username()):
+              user.send_prompt("Private message can't be established as you have been blocked\n")
+            else:
+              if onlineUser not in activeP2PAccepting:
+                activeP2PAccepting.append(onlineUser.get_username())
+                onlineUser.send_prompt("WhatsApp " + onlineUser.get_username() + " allowprivate " + str(onlineUser.get_address()) + " " + user.get_username())
+
+              user.send_prompt("WhatsApp " + user.get_username() + " startprivate " + str(onlineUser.get_address()) + " " + onlineUser.get_username())
+
+
+              print("startprivate is valid, messages should be sent")
+              
             break
-          else:
-            pass
+
+        else:
+          user.send_prompt(userComponent + " is offline\n")
+
+
       else:
-        user.send_prompt(userComponent + " is offline\n")
+        user.send_prompt("Can't start private message with yourself\n")
+
+    elif command.startswith("stopprivate"):
+
+      userComponent = retrieve_components(command)
+
+#       if user.get_username() in activeP2PMessaging:
+#         if userComponent in activeP2PMessaging[user.get_username()]:
+#           print("Found 2p2 session")
+#           break
+# 
+#       if userComponent in activeP2PMessaging:
+#         if user.get_username() in activeP2PMessaging:
+#           print("Found 2p2 session")
+#           break
+# 
+#       user.send_prompt("No active p2p messaging session between you and " + userComponent + "\n")
 
     else:
       if user in onlineUsers:
@@ -402,6 +441,7 @@ def unblock(*args):
 # we will use two sockets, one for sending and one for receiving
 # socket.socket creates a new socket using the given address family, socket type
 welcomingSocket = socket(AF_INET, SOCK_STREAM)
+# socket.TCP_NODELAY allows u to send the data immediately
 welcomingSocket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 # binds the port number to the server's socket, the IP address of the server is localhost
 welcomingSocket.bind(('localhost', serverPort))
