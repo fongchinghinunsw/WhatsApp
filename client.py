@@ -15,13 +15,16 @@ serverPort = int(sys.argv[2])
 clientSocket = socket(AF_INET, SOCK_STREAM)
 clientSocket.connect((serverName, serverPort))
 
-# {user: serverSocket}
-privateSocket = {}
-
-p2pList = {}
+currentPrivateConnection = {}
 
 username = ""
 CONNECTED = True
+
+privateAcceptSocket = socket(AF_INET, SOCK_STREAM)
+privateAcceptSocket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+# binds the port number to the server's socket, the IP address of the server is localhost
+privateAcceptSocket.bind(('localhost', 0))
+privateAcceptSocket.listen(1)
 
 def retrieve_components(command):
   """ split the command and return a list of arguments """
@@ -29,7 +32,7 @@ def retrieve_components(command):
   command = command.split(' ')
   first_component = command.pop(0)
 
-  if first_component == "message":
+  if first_component == "message" or first_component == "private":
     return [command[0], ' '.join(command[1:])]
   elif first_component == "broadcast":
     return ' '.join(command)
@@ -58,6 +61,11 @@ def login_process():
       clientSocket.send(password.encode())
 
     elif prompt == "Welcome back !\n":
+
+      print("private acceptor's server ip =", str(privateAcceptSocket.getsockname()[0]), "port =", str(privateAcceptSocket.getsockname()[1]))
+      message = str(privateAcceptSocket.getsockname()[0]) + " " + str(privateAcceptSocket.getsockname()[1])
+      clientSocket.send(message.encode())
+
       LOGIN = False
 
   print("Logged in")
@@ -73,9 +81,9 @@ def command_process():
       user, message = retrieve_components(command)
 
 
-      if user in p2pList:
+      if user in currentPrivateConnection:
         print("ready to send a private msg")
-        p2pList[user].send(message.encode())
+        currentPrivateConnection[user].send(message.encode())
         print("Sent a private message")
       else:
         print("You haven't executed startprivate <" + user + ">", flush=True)
@@ -86,20 +94,11 @@ def command_process():
     clientSocket.send(command.encode())
 
     if command == "logout":
+      for session in currentPrivateSessions:
+        currentPrivateSessions[session].close()
+      privateAcceptSocket.close()
       CONNECTED = False
 
-
-
-def main_handler():
-
-  login_process()
-
-  recvThread = Thread(name="recvHandler", target=recv_handler)
-  recvThread.daemon = True
-  recvThread.start()
-
-
-  command_process()
 
 
 def recv_handler():
@@ -118,69 +117,85 @@ def recv_handler():
       break
 
     elif prompt.startswith("WhatsApp " + username + " startprivate"):
+      # you are the private initializer
+      print(prompt)
       prompt = prompt.split(' ')
       
-      ip = prompt[-3].strip(",'(")
-      port = int(prompt[-2].rstrip(')'))
+      ip = prompt[-3]
+      port = int(prompt[-2])
       target = prompt[-1]
 
-      time.sleep(0.5)
       privateConnectSocket = socket(AF_INET, SOCK_STREAM)
-      privateConnectSocket.connect((ip, 4689))
+      # connect to the private acceptor's private socket.
+      print("private initializer is trying to connect to ip =", str(ip), "port =", str(port))
+      privateConnectSocket.connect((ip, port))
 
-      p2pList[target] = privateConnectSocket
+      # send to privateConnectSocket = send to the private acceptor
+      currentPrivateConnection[target] = privateConnectSocket
 
+      privateInitializerThread = Thread(name="privateInitializerHandler", target=private_initializer_handler, args=[target])
+      privateInitializerThread.daemon = True
+      privateInitializerThread.start()
 
       continue
 
     elif prompt.startswith("WhatsApp " + username + " allowprivate"):
+      # you are the private acceptor
       print("Allowing private")
       prompt = prompt.split(' ')
 
-      ip = prompt[-3].strip(",'(")
-      port = int(prompt[-2].rstrip(')'))
+      ip = prompt[-3]
+      port = int(prompt[-2])
       target = prompt[-1]
-
       
-      privateThread = Thread(name="privateHandler", target=private_handler, args=[target])
-      privateThread.daemon = True
-      privateThread.start()
+      privateAcceptorThread = Thread(name="privateAcceptorHandler", target=private_acceptor_handler, args=[target])
+      privateAcceptorThread.daemon = True
+      privateAcceptorThread.start()
 
 
       print("Accepted connection")
       continue
-      
+
+    elif prompt.startswith("WhatsApp stopprivate with"):
+      print("Stopping private")
+      prompt = prompt.split(' ')
+      currentPrivateConnection[prompt[-1]].close()
+      del currentPrivateConnection[prompt[-1]]
+      continue
 
     print(prompt, flush=True, end="")
 
-def private_handler(target):
-  privateAcceptSocket = socket(AF_INET, SOCK_STREAM)
-  privateAcceptSocket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-  # binds the port number to the server's socket, the IP address of the server is localhost
-  privateAcceptSocket.bind(('localhost', 4689))
-  privateAcceptSocket.listen(1)
+def private_acceptor_handler(target):
 
   connectionSocket, connectionAddr = privateAcceptSocket.accept()
-  p2pList[target] = connectionSocket
+  print("private acceptor receive connection from " + str(connectionAddr))
+  # acceptor can use this socket to send to the private initializer.
+  currentPrivateConnection[target] = connectionSocket
   
-  print("Hi")
+  print("started private_handler")
 
   while (1):
     msg = connectionSocket.recv(2048)
+    print("Received a msg")
 
     print(msg.decode())
 
+def private_initializer_handler(name):
+  print(currentPrivateConnection)
+  privateAcceptorSocket = currentPrivateConnection[name]
+  while (1):
+    msg = privateAcceptorSocket.recv(2048)
+
+    print(msg.decode())
   
 
-mainThread = Thread(name="mainHandler", target=main_handler)
-mainThread.daemon = True
-mainThread.start()
-# won't close until a daemon thread has completed its work
+login_process()
 
+recvThread = Thread(name="recvHandler", target=recv_handler)
+recvThread.daemon = True
+recvThread.start()
+
+command_process()
 
 # clientSocket.close()
 # Close the socket
-
-# main thread
-while CONNECTED:
-  time.sleep(0.1)
