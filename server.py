@@ -7,7 +7,7 @@ import sys
 from socket import *
 from datetime import datetime
 from threading import Timer, Condition, Thread
-from helper import retrieve_components, get_username_to_password_mapping, decorate_chat_msg
+from helper import retrieve_components, decorate_chat_msg, is_existing_user, username2password
 
 server_port = int(sys.argv[1])
 block_duration = int(sys.argv[2])
@@ -60,9 +60,6 @@ def create_thread(user_object):
   thread.start()
 
 
-def is_existing_user(username, user_dict):
-  """ check if the user exists in the dictionary """
-  return username in user_dict
 
 def is_online_user(username):
   """ return True if 'username' is online """
@@ -79,6 +76,19 @@ def has_blocked(userA, userB):
       return False
   else:
     return False
+
+def has_existing_connection(userA, userB):
+  """ return True if there's a private messaging session between userA and userB """
+  if userA in activeP2PSessions:
+    if userB in activeP2PSessions[userA]:
+      return True
+
+  if userB in activeP2PSessions:
+    if userA in activeP2PSessions[userB]:
+      return True
+
+  return False
+  
 
 def login_unblock(username):
   """ unblock the user by removing the user from the blocked_list
@@ -112,7 +122,7 @@ def send_broadcast(user, message, typeOfMsg):
       online_user.send_prompt(message)
 
     if get_blocked:
-      user.send_prompt("Your message could not be delivered to some recipients\n")
+      user.send_prompt("Your message could not be delivered to some recipients")
 
   elif typeOfMsg == 1:
     # just send to all online users if it's a login/logout broadcast
@@ -127,6 +137,12 @@ def send_broadcast(user, message, typeOfMsg):
 
 
 def logout(user):
+  """ logout the user from the server, following operations are done
+      (1) send broadcast to notify users that user has logged out
+      (2) remove the user from the online users list
+      (3) record the user's last online time
+      (4) send message to the client application to confirm the log out
+  """
   print("Executing logout")
   send_broadcast(user, user.get_username() + " has logged out\n", 1)
   for online_user in online_users:
@@ -229,7 +245,7 @@ def main_process(user):
       break
 
 
-    elif command.startswith("message"):
+    elif command.startswith("message "):
       userComponent, message = retrieve_components(command)
       message = decorate_chat_msg(user.get_username(), message)
 
@@ -259,7 +275,7 @@ def main_process(user):
       else:
         user.send_prompt("Invalid user")
       
-    elif command.startswith("broadcast"):
+    elif command.startswith("broadcast "):
       message = retrieve_components(command)
       message = decorate_chat_msg(user.get_username(), message)
 
@@ -275,7 +291,7 @@ def main_process(user):
       prompt += '\n'
       user.send_prompt(prompt)
        
-    elif command.startswith("whoelsesince"):
+    elif command.startswith("whoelsesince "):
       time = int(retrieve_components(command))
 
 
@@ -302,7 +318,8 @@ def main_process(user):
        
       
 
-    elif command.startswith("block"):
+    elif command.startswith("block "):
+      print(block_users)
       userComponent = retrieve_components(command)
 
       if userComponent not in username2password:
@@ -316,7 +333,7 @@ def main_process(user):
         t.cancel()
         continue
 
-      user.send_prompt("You have blocked " + userComponent + "\n")
+      user.send_prompt("You have blocked " + userComponent)
 
       if userComponent in block_users:
         block_users[userComponent].add(user.get_username())
@@ -325,7 +342,8 @@ def main_process(user):
         block_users[userComponent] = {user.get_username()}
 
 
-    elif command.startswith("unblock"):
+    elif command.startswith("unblock "):
+      print(block_users)
       userComponent = retrieve_components(command)
 
       if userComponent not in username2password:
@@ -338,9 +356,9 @@ def main_process(user):
         block_users[userComponent].remove(user.get_username())
 
       else:
-        user.send_prompt("User " + userComponent + " is not in your block list\n")
+        user.send_prompt("User " + userComponent + " is not in your block list")
 
-    elif command.startswith("startprivate"):
+    elif command.startswith("startprivate "):
       userComponent = retrieve_components(command)
       print(userComponent)
 
@@ -348,7 +366,11 @@ def main_process(user):
         user.send_prompt("User doesn't exist")
         t.cancel()
         continue
-        
+
+      elif has_existing_connection(user.get_username(), userComponent):
+        user.send_prompt("Can't establish private connection as current private connection with this user exists")
+        t.cancel()
+        continue
 
       if userComponent != user.get_username():
 
@@ -357,7 +379,7 @@ def main_process(user):
             if has_blocked(userComponent, user.get_username()):
               user.send_prompt("Private message can't be established as you have been blocked")
             else:
-              if online_user not in activeP2PSessions:
+              if user.get_username() not in activeP2PSessions:
                 activeP2PSessions[user.get_username()] = [online_user.get_username()]
               else:
                 activeP2PSessions[user.get_username()].append(online_user.get_username())
@@ -374,15 +396,16 @@ def main_process(user):
         else:
           user.send_prompt(userComponent + " is offline")
 
-
       else:
         user.send_prompt("Can't start private message with yourself")
 
-    elif command.startswith("stopprivate"):
+    elif command.startswith("stopprivate "):
 
       userComponent = retrieve_components(command)
 
       found = False
+
+      # check if there exists a private session between two users
       if user.get_username() in activeP2PSessions:
         if userComponent in activeP2PSessions[user.get_username()]:
           activeP2PSessions[user.get_username()].remove(userComponent)
@@ -392,6 +415,7 @@ def main_process(user):
           activeP2PSessions[userComponent].remove(user.get_username())
           found = True
 
+      # asks two users to discontinue their private connection if there's one between them
       if found:
         for online_user in online_users:
           if online_user.get_username() == user.get_username():
@@ -402,6 +426,10 @@ def main_process(user):
         fail_message = "You don't have an active p2p session with " + userComponent
         user.send_prompt(fail_message.encode())
 
+    elif command == "WhatsApp sent private command":
+      t.cancel()
+      continue
+
     else:
       if user in online_users:
         user.send_prompt("Invalid command")
@@ -410,8 +438,6 @@ def main_process(user):
         t.cancel()
         break
     t.cancel()
-
-  
 
 
 def main_handler(user_object):
@@ -455,8 +481,7 @@ lastLoggedIn = {}
 # if A initiates a p2p session with B, then {A: [B], ...}
 activeP2PSessions = {}
 
-username2password = get_username_to_password_mapping()
-
+# server's socket allowing clients to connect with
 server_socket = socket(AF_INET, SOCK_STREAM)
 server_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 server_socket.bind(('localhost', server_port))
@@ -468,5 +493,6 @@ while 1:
   connectionSocket, clientAddress = server_socket.accept()
   print("Server receive connection from", str(clientAddress))
   user = User(connectionSocket, clientAddress[0])
+  # create a separate thread for the client
   create_thread(user)
   

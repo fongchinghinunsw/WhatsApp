@@ -10,6 +10,7 @@ def get_username_to_password_mapping():
 
   return username2password
 
+
 def retrieve_components(command):
   """ split the command and return its arguments """
   command = command.strip(' ')
@@ -30,6 +31,14 @@ def retrieve_components(command):
 
 def decorate_chat_msg(username, message):
   """ Decorate the message sent by a user by adding the sender's name
-      at the front and a newline character at the back
+      and a colon at the front
   """
   return username + ": " + message
+
+def is_existing_user(username, user_dict):
+  """ check if the user exists in the dictionary """
+  return username in user_dict
+
+
+# a dictionary stores username:password key-value pairs
+username2password = get_username_to_password_mapping()

@@ -1,11 +1,11 @@
 # Python 3
-# Usage: python3 UDPClient3.py localhost 12000
+# Usage: python3 client.py <server_IP> <server_port>
 # coding: utf-8
 
 import sys
 from socket import *
 from threading import Thread
-from helper import retrieve_components
+from helper import retrieve_components, decorate_chat_msg, username2password
 
 server_IP = sys.argv[1]
 server_port = int(sys.argv[2])
@@ -48,19 +48,28 @@ def command_process():
     command = input()
     print("inputted a command")
 
-    if command.startswith("private"):
+    if command.startswith("private "):
       user, message = retrieve_components(command)
 
+      if user not in username2password:
+        print("User doesn't exist")
+
+      if user == username:
+        print("Can't send private message to yourself")
 
       if user in private_connections:
         #print("ready to send a private msg")
+        message = "(private)" + decorate_chat_msg(username, message)
         private_connections[user].send(message.encode())
         #print("Sent a private message")
       else:
-        print("You haven't executed startprivate <" + user + ">", flush=True)
+        print("You haven't executed <startprivate " + user + ">", flush=True)
+
+      # notify the server the client entered a command, avoid getting
+      # automatically logged off.
+      client_socket.send("WhatsApp sent private command".encode())
 
       continue
-      
 
     client_socket.send(command.encode())
 
@@ -69,6 +78,8 @@ def command_process():
         private_connections[session].close()
       privateAcceptSocket.close()
       CONNECTED = False
+
+  print("///")
 
 
 
@@ -96,6 +107,7 @@ def recv_handler():
       port = int(prompt[-2])
       target = prompt[-1]
 
+
       privateConnectSocket = socket(AF_INET, SOCK_STREAM)
       # connect to the private acceptor's private socket.
       #print("private initializer is trying to connect to ip =", str(ip), "port =", str(port))
@@ -108,6 +120,8 @@ def recv_handler():
       privateInitializerThread.daemon = True
       privateInitializerThread.start()
 
+      print("You have established a private messaging session with " + target)
+
       continue
 
     elif prompt.startswith("WhatsApp " + username + " allowprivate"):
@@ -118,6 +132,8 @@ def recv_handler():
       ip = prompt[-3]
       port = int(prompt[-2])
       target = prompt[-1]
+
+      print("You have established a private messaging session with " + target)
       
       privateAcceptorThread = Thread(name="privateAcceptorHandler", target=private_acceptor_handler, args=[target])
       privateAcceptorThread.daemon = True
@@ -130,6 +146,7 @@ def recv_handler():
     elif prompt.startswith("WhatsApp stopprivate with"):
       #print("Stopping private")
       prompt = prompt.split(' ')
+      # close the socket
       private_connections[prompt[-1]].close()
       del private_connections[prompt[-1]]
       continue
@@ -145,10 +162,14 @@ def private_acceptor_handler(target):
   private_connections[target] = connectionSocket
   
   while (1):
+
     msg = connectionSocket.recv(2048)
+    if len(msg) == 0:
+      break
     #print("Received a msg")
 
     print(msg.decode())
+
 
 def private_initializer_handler(name):
   """ receive message from a particular user in private messaging
@@ -159,8 +180,11 @@ def private_initializer_handler(name):
 
   while (1):
     msg = private_acceptor_socket.recv(2048)
+    if len(msg) == 0:
+      break
 
     print(msg.decode())
+
 
 # creates the client's socket
 # perform the three-way handshake and TCP connection is established
@@ -171,6 +195,7 @@ client_socket.connect((server_IP, server_port))
 # format {user1: socket1, user2: socket2, ...}
 private_connections = {}
 
+# initialize the username of this client as a global variable
 username = ""
 CONNECTED = True
 
