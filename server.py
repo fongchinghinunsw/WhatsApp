@@ -7,7 +7,7 @@ import sys
 from socket import *
 from datetime import datetime
 from threading import Timer, Condition, Thread
-from helper import retrieve_components, decorate_chat_msg, is_existing_user, username2password
+from helper import retrieve_components, decorate_chat_msg, is_existing_user,username2password
 
 server_port = int(sys.argv[1])
 block_duration = int(sys.argv[2])

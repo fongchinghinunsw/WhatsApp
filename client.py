@@ -20,7 +20,7 @@ def login_process():
     prompt = client_socket.recv(2048)
     prompt = prompt.decode()
     print(prompt, flush=True, end="")
-    #print(repr(prompt))
+    #print(repr(prompt)).
 
     if prompt == "Username: ":
       username = input()

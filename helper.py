@@ -40,5 +40,5 @@ def is_existing_user(username, user_dict):
   return username in user_dict
 
 
-# a dictionary stores username:password key-value pairs
+# a dictionary stores username:password key-value pairs.
 username2password = get_username_to_password_mapping()
