@@ -1,4 +1,4 @@
-# Python 3
+# Python 3.7
 # Usage: python3 server.py server_port block_duration timeout
 # coding: utf-8
 
@@ -60,7 +60,6 @@ def create_thread(user_object):
   thread.start()
 
 
-
 def is_online_user(username):
   """ return True if 'username' is online """
   return username in [user.get_username() for user in online_users]
@@ -69,8 +68,6 @@ def is_online_user(username):
 def has_blocked(userA, userB):
   """ return True if userA has blocked userB """
   if userB in block_users:
-    print(block_users)
-    print(block_users[userB])
     if userA in block_users[userB]:
       return True
     else:
@@ -96,7 +93,6 @@ def login_unblock(username):
   """ unblock the user by removing the user from the blocked_list
       and remove its # of unsuccessful login attempts history
   """
-  print("unblock")
   del unSuccessfulAttempt[username]
   del blocked_login[username]
 
@@ -113,8 +109,9 @@ def send_broadcast(user, message, typeOfMsg):
   """
   if typeOfMsg == 0:
     get_blocked = False
+
     for online_user in online_users:
-      # need to check if "online_user" has blocked "user"
+
       if has_blocked(online_user.get_username(), user.get_username()):
         get_blocked = True
         continue
@@ -128,7 +125,7 @@ def send_broadcast(user, message, typeOfMsg):
       user.send_prompt("Your message could not be delivered to some recipients")
 
   elif typeOfMsg == 1:
-    # just send to all online users if it's a login/logout broadcast
+
     for online_user in online_users:
       # when A login/logout do not inform B if A blocked B and
       # do not inform A itself
@@ -148,8 +145,6 @@ def logout(user):
       (5) remove the user's record from all active P2P sessions
       (6) delete the user object
   """
-  print("Executing logout")
-  print(activeP2PSessions)
   send_broadcast(user, user.get_username() + " has logged out\n", 1)
   for online_user in online_users:
     if online_user.get_username() == user.get_username():
@@ -165,7 +160,6 @@ def logout(user):
       if user.get_username() in activeP2PSessions[activeuser]:
         activeP2PSessions[activeuser].remove(user.get_username())
 
-  print(activeP2PSessions)
   del user
 
 
@@ -178,21 +172,24 @@ def login_process(user):
 
     user.send_prompt("Username: ")
     username = user.get_input()
-    print("username is", username)
 
     if is_existing_user(username, username2password):
 
       for _ in range(3):
         user.send_prompt("Password: ")
-        print("Prompted for password")
         password = user.get_input()
-        print("password is", password)
 
         if is_online_user(username):
           user.send_prompt("This account has logged in on another device.\n")
           password = ""
           break
+
         elif username2password[username] == password:
+
+          if username in blocked_login:
+            user.send_prompt("Your account has been blocked. Please try again later.\n")
+            break
+
           # delete user's unsuccessful login record if the password is
           # correct
           if username in unSuccessfulAttempt:
@@ -217,50 +214,45 @@ def login_process(user):
                 blocked_login[username].start()
             
               user.send_prompt("Your account has been blocked. Please try again later.\n")
-              print("sending blocked prompt")
               break
           else:
             unSuccessfulAttempt[username] = 1
 
           user.send_prompt("Invalid Password. Please try again.\n")
-          print("sending retry prompt")
-        
 
     else:
       user.send_prompt("User doesn't exist\n")
-      print("sending no user prompt")
       continue
 
     # user logs in successfully
-    if password == username2password[username]:
+    if password == username2password[username] and username not in blocked_login:
       user.send_prompt("Welcome back !\n")
 
       # sends out all the cached offline messages to the client
       if user.get_username() in offline_msg_box:
-        print(offline_msg_box[user.get_username()])
+
         for msg in offline_msg_box[user.get_username()]:
           user.send_prompt(msg)
 
         del offline_msg_box[user.get_username()]
 
-      print("waiting for user's info to come back")
       # try to get back the port number used by the client for accepting
       # private connections
       private = user.get_input()
       private = private.split(' ')
       user.set_private_accepting_port(private[1])
-      print(user.get_username() + " private acceptor socket is " + str(private[0]) + " " + str(private[1]))
       break
 
 
 def main_process(user):
+  """ handle the command received from the client """
 
   while (1):
     t = Timer(timeout, logout, [user])
     t.start()
 
     command = user.get_input()
-    print("command =", command)
+
     if command == "logout":
 
       logout(user)
@@ -277,13 +269,16 @@ def main_process(user):
         t.cancel()
         continue
 
+      elif has_blocked(userComponent, user.get_username()):
+        user.send_prompt("Your message could not be delivered as the recipient has blocked you")
+        t.cancel()
+        continue
+
+
       if is_existing_user(userComponent, username2password):
         for online_user in online_users:
           if online_user.get_username() == userComponent:
-            if user.get_username() in block_users and online_user.get_username() in block_users[user.get_username()]:
-              user.send_prompt("Your message could not be delivered as the recipient has blocked you")
-            else:
-              online_user.send_prompt(message)
+            online_user.send_prompt(message)
             break
 
         # if the user is offline, add the message to the offline mail box
@@ -324,12 +319,16 @@ def main_process(user):
         now = datetime.now()
         timeDelta = now - lastTime
 
+        # stores the user into the result set if it's not online since
+        # that time
         if timeDelta.seconds < time:
           result.add(i)
 
+      # removes the client itself from the result
       if user.get_username() in result:
         result.remove(user.get_username())
 
+      # construct the prompt
       prompt = "Users: "
       for i in result:
         prompt = prompt + i + ", "
@@ -339,17 +338,15 @@ def main_process(user):
       user.send_prompt(prompt)
        
     elif command.startswith("block "):
-      print(block_users)
+
       userComponent = retrieve_components(command)
 
       if userComponent not in username2password:
-        print("User is invalid")
         user.send_prompt("User is invalid")
         t.cancel()
         continue
 
       elif userComponent == user.get_username():
-        print("User is itself")
         user.send_prompt("Can't block yourself")
         t.cancel()
         continue
@@ -364,7 +361,6 @@ def main_process(user):
 
 
     elif command.startswith("unblock "):
-      print(block_users)
       userComponent = retrieve_components(command)
 
       if userComponent not in username2password:
@@ -374,6 +370,7 @@ def main_process(user):
         user.send_prompt("Unblocking yourself is invalid")
 
       elif userComponent in block_users and user.get_username() in block_users[userComponent]:
+        user.send_prompt("You have unblocked " + userComponent)
         block_users[userComponent].remove(user.get_username())
 
       else:
@@ -381,7 +378,6 @@ def main_process(user):
 
     elif command.startswith("startprivate "):
       userComponent = retrieve_components(command)
-      print(userComponent)
 
       if not is_existing_user(userComponent, username2password):
         user.send_prompt("User doesn't exist")
@@ -399,6 +395,7 @@ def main_process(user):
           if online_user.get_username() == userComponent:
             if has_blocked(userComponent, user.get_username()):
               user.send_prompt("Private message can't be established as you have been blocked")
+
             else:
               if user.get_username() not in activeP2PSessions:
                 activeP2PSessions[user.get_username()] = [online_user.get_username()]
@@ -409,9 +406,6 @@ def main_process(user):
 
               user.send_prompt("WhatsApp " + user.get_username() + " startprivate " + str(online_user.get_address()) + " " + str(online_user.get_private_accepting_port()) + " " + online_user.get_username())
 
-
-              print("startprivate is valid, messages should be sent")
-              
             break
 
         else:
@@ -441,12 +435,14 @@ def main_process(user):
       if found:
         for online_user in online_users:
           if online_user.get_username() == user.get_username():
-            online_user.send_prompt("WhatsApp stopprivate with " + userComponent)
+            online_user.send_prompt("WhatsApp stopprivate (1) " + userComponent)
+
           elif online_user.get_username() == userComponent:
-            online_user.send_prompt("WhatsApp stopprivate with " + user.get_username())
+            online_user.send_prompt("WhatsApp stopprivate (2) " + user.get_username())
+
       else:
         fail_message = "You don't have an active p2p session with " + userComponent
-        user.send_prompt(fail_message.encode())
+        user.send_prompt(fail_message)
 
     elif command == "WhatsApp sent private command":
       t.cancel()
@@ -496,7 +492,7 @@ online_users = []
 # stores message in the format {user1:[msg1, msg2, ...], user2: [msg1, msg2, ...]}
 offline_msg_box = {}
 
-# saves the last online time for all users.
+# saves the last online time for all users in the format {user1: time1, ...}
 lastLoggedIn = {}
 
 # saves active p2p messaging sessions user pairs
@@ -513,7 +509,6 @@ server_socket.listen(1);
 while 1:
   # creates a connection socket dedicated to this particular client
   connectionSocket, clientAddress = server_socket.accept()
-  print("Server receive connection from", str(clientAddress))
   user = User(connectionSocket, clientAddress[0])
   # create a separate thread for the client
   create_thread(user)

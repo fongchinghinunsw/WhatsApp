@@ -29,11 +29,13 @@ def retrieve_components(command):
   else:
     return command[0]
 
+
 def decorate_chat_msg(username, message):
   """ Decorate the message sent by a user by adding the sender's name
       and a colon at the front
   """
   return username + ": " + message
+
 
 def is_existing_user(username, user_dict):
   """ check if the user exists in the dictionary """
