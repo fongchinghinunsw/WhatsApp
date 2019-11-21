@@ -393,7 +393,7 @@ def main_process(user):
               else:
                 activeP2PSessions[user.get_username()].append(online_user.get_username())
 
-              online_user.send_prompt("WhatsApp " + online_user.get_username() + " allowprivate " + str(user.get_address()) + " " + str(user.get_private_accepting_port()) + " " + user.get_username())
+              online_user.send_prompt("WhatsApp " + online_user.get_username() + " allowprivate " + user.get_username())
 
               user.send_prompt("WhatsApp " + user.get_username() + " startprivate " + str(online_user.get_address()) + " " + str(online_user.get_private_accepting_port()) + " " + online_user.get_username())
 

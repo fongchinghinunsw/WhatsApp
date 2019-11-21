@@ -56,10 +56,10 @@ def command_process():
       if user not in username2password:
         print("User doesn't exist")
 
-      if user == username:
+      elif user == username:
         print("Can't send private message to yourself")
 
-      if user in private_connections:
+      elif user in private_connections:
         #print("ready to send a private msg")
         message = "(private)" + decorate_chat_msg(username, message)
         private_connections[user].send(message.encode())
@@ -131,8 +131,6 @@ def recv_handler():
       #print("Allowing private")
       prompt = prompt.split(' ')
 
-      ip = prompt[-3]
-      port = int(prompt[-2])
       target = prompt[-1]
 
       print("You have established a private messaging session with " + target)
