@@ -1,13 +1,13 @@
-# Sample code for Multi-Threaded Server
 # Python 3
-# Usage: python3 UDPserver3.py
+# Usage: python3 server.py server_port block_duration timeout
 # coding: utf-8
 
 import sys
 from socket import *
 from datetime import datetime
 from threading import Timer, Condition, Thread
-from helper import retrieve_components, decorate_chat_msg, is_existing_user,username2password
+from helper import retrieve_components, decorate_chat_msg, is_existing_user, username2password
+
 
 server_port = int(sys.argv[1])
 block_duration = int(sys.argv[2])
@@ -40,7 +40,7 @@ class User:
   def set_username(self, username):
     self.username = username
 
-  def set_private_acceptor_port(self, port):
+  def set_private_accepting_port(self, port):
     self.private_accepting_port = port
 
   def send_prompt(self, prompt):
@@ -65,6 +65,7 @@ def is_online_user(username):
   """ return True if 'username' is online """
   return username in [user.get_username() for user in online_users]
 
+
 def has_blocked(userA, userB):
   """ return True if userA has blocked userB """
   if userB in block_users:
@@ -76,6 +77,7 @@ def has_blocked(userA, userB):
       return False
   else:
     return False
+
 
 def has_existing_connection(userA, userB):
   """ return True if there's a private messaging session between userA and userB """
@@ -97,6 +99,7 @@ def login_unblock(username):
   print("unblock")
   del unSuccessfulAttempt[username]
   del blocked_login[username]
+
 
 def send_broadcast(user, message, typeOfMsg):
   """send broadcast to all online users that didn't block the sender
@@ -127,7 +130,7 @@ def send_broadcast(user, message, typeOfMsg):
   elif typeOfMsg == 1:
     # just send to all online users if it's a login/logout broadcast
     for online_user in online_users:
-      # when A login/logout do not inform B when A blocked B and
+      # when A login/logout do not inform B if A blocked B and
       # do not inform A itself
       if has_blocked(user.get_username(), online_user.get_username())\
          or user.get_username() == online_user.get_username():
@@ -155,8 +158,9 @@ def logout(user):
 
 
 def login_process(user):
-
-  print("WhatsApp version 3.2.4")
+  """ handles all interactions between the server and the client while
+      the client is trying to login
+  """
 
   while (1):
 
@@ -165,8 +169,8 @@ def login_process(user):
     print("username is", username)
 
     if is_existing_user(username, username2password):
-      for _ in range(3):
 
+      for _ in range(3):
         user.send_prompt("Password: ")
         print("Prompted for password")
         password = user.get_input()
@@ -177,10 +181,12 @@ def login_process(user):
           password = ""
           break
         elif username2password[username] == password:
-          # delete user's unsuccessful login record
+          # delete user's unsuccessful login record if the password is
+          # correct
           if username in unSuccessfulAttempt:
             del unSuccessfulAttempt[username]
 
+          # set the name of the user and add it to the online_users list
           user.set_username(username)
           online_users.append(user) 
 
@@ -213,9 +219,11 @@ def login_process(user):
       print("sending no user prompt")
       continue
 
+    # user logs in successfully
     if password == username2password[username]:
       user.send_prompt("Welcome back !\n")
 
+      # sends out all the cached offline messages to the client
       if user.get_username() in offline_msg_box:
         print(offline_msg_box[user.get_username()])
         for msg in offline_msg_box[user.get_username()]:
@@ -224,17 +232,21 @@ def login_process(user):
         del offline_msg_box[user.get_username()]
 
       print("waiting for user's info to come back")
+      # try to get back the port number used by the client for accepting
+      # private connections
       private = user.get_input()
       private = private.split(' ')
-      user.set_private_acceptor_port(private[1])
+      user.set_private_accepting_port(private[1])
       print(user.get_username() + " private acceptor socket is " + str(private[0]) + " " + str(private[1]))
       break
 
 
 def main_process(user):
+
   while (1):
     t = Timer(timeout, logout, [user])
     t.start()
+
     command = user.get_input()
     print("command =", command)
     if command == "logout":
@@ -243,7 +255,6 @@ def main_process(user):
       t.cancel()
 
       break
-
 
     elif command.startswith("message "):
       userComponent, message = retrieve_components(command)
@@ -262,16 +273,15 @@ def main_process(user):
             else:
               online_user.send_prompt(message)
             break
-        # if no break
+
+        # if the user is offline, add the message to the offline mail box
         else:
-          # add a newline to make it better looking when printed out later
           message = message + '\n'
           if userComponent in offline_msg_box:
             offline_msg_box[userComponent].append(message)
           else:
             offline_msg_box[userComponent] = [message]
 
-        
       else:
         user.send_prompt("Invalid user")
       
@@ -292,9 +302,9 @@ def main_process(user):
       user.send_prompt(prompt)
        
     elif command.startswith("whoelsesince "):
+
       time = int(retrieve_components(command))
-
-
+      # stores online users' name into a set
       result = {online_user.get_username() for online_user in online_users}
 
       for i in lastLoggedIn:
@@ -316,8 +326,6 @@ def main_process(user):
       prompt += '\n'
       user.send_prompt(prompt)
        
-      
-
     elif command.startswith("block "):
       print(block_users)
       userComponent = retrieve_components(command)
@@ -327,6 +335,7 @@ def main_process(user):
         user.send_prompt("User is invalid")
         t.cancel()
         continue
+
       elif userComponent == user.get_username():
         print("User is itself")
         user.send_prompt("Can't block yourself")
@@ -410,6 +419,7 @@ def main_process(user):
         if userComponent in activeP2PSessions[user.get_username()]:
           activeP2PSessions[user.get_username()].remove(userComponent)
           found = True
+
       elif userComponent in activeP2PSessions:
         if user.get_username() in activeP2PSessions[userComponent]:
           activeP2PSessions[userComponent].remove(user.get_username())

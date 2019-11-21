@@ -1,5 +1,5 @@
 # Python 3
-# Usage: python3 client.py <server_IP> <server_port>
+# Usage: python3 client.py server_IP server_port
 # coding: utf-8
 
 import sys
@@ -20,17 +20,19 @@ def login_process():
     prompt = client_socket.recv(2048)
     prompt = prompt.decode()
     print(prompt, flush=True, end="")
-    #print(repr(prompt)).
+    #print(repr(prompt))
 
-    if prompt == "Username: ":
+    # we use endswith because the message may get packed with another
+    # message at the front
+    if prompt.endswith("Username: "):
       username = input()
       client_socket.send(username.encode())
 
-    elif prompt == "Password: ":
+    elif prompt.endswith("Password: "):
       password = input()
       client_socket.send(password.encode())
 
-    elif prompt == "Welcome back !\n":
+    elif prompt.endswith("Welcome back !\n"):
 
       #print("private acceptor's server ip =", str(privateAcceptSocket.getsockname()[0]), "port =", str(privateAcceptSocket.getsockname()[1]))
       message = str(privateAcceptSocket.getsockname()[0]) + " " + str(privateAcceptSocket.getsockname()[1])
