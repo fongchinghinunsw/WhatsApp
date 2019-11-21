@@ -145,8 +145,11 @@ def logout(user):
       (2) remove the user from the online users list
       (3) record the user's last online time
       (4) send message to the client application to confirm the log out
+      (5) remove the user's record from all active P2P sessions
+      (6) delete the user object
   """
   print("Executing logout")
+  print(activeP2PSessions)
   send_broadcast(user, user.get_username() + " has logged out\n", 1)
   for online_user in online_users:
     if online_user.get_username() == user.get_username():
@@ -155,6 +158,15 @@ def logout(user):
 
       user.send_prompt("WhatsApp " + user.get_username() + " logout")
       break
+
+  if user.get_username() in activeP2PSessions:
+    del activeP2PSessions[user.get_username()]
+    for activeuser in activeP2PSessions:
+      if user.get_username() in activeP2PSessions[activeuser]:
+        activeP2PSessions[activeuser].remove(user.get_username())
+
+  print(activeP2PSessions)
+  del user
 
 
 def login_process(user):
@@ -505,4 +517,6 @@ while 1:
   user = User(connectionSocket, clientAddress[0])
   # create a separate thread for the client
   create_thread(user)
+
+server_socket.close()
   

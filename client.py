@@ -10,8 +10,25 @@ from helper import retrieve_components, decorate_chat_msg, username2password
 server_IP = sys.argv[1]
 server_port = int(sys.argv[2])
 
+def notify_terminate_connection(connections):
+  """ notify all current private chatting clients to close their sockets
+      correspond to this user
+  """
+  message = "WhatsApp terminate connection"
+  message = message.encode()
+
+  for activeuser in connections:
+    connections[activeuser].send(message)
+
+def close_sockets(connections):
+  """ close all unused sockets """
+  for activeuser in connections:
+    connections[activeuser].close()
+  
 
 def login_process():
+  """ sends/receives authentication-related input/out to/from the server
+  """
   global username
 
   LOGIN = True
@@ -43,8 +60,8 @@ def login_process():
   #print("Logged in")
 
 def command_process():
+  """ sends input to the server """
   global CONNECTED
-  global privateConnectSocket
 
   while CONNECTED:
     command = input()
@@ -59,8 +76,11 @@ def command_process():
       elif user == username:
         print("Can't send private message to yourself")
 
-      elif user in private_connections:
+      elif user in private_connections and user in noLongerOnline:
+        print("Can't send to this client as he/she has logged out")
         #print("ready to send a private msg")
+
+      elif user in private_connections:
         message = "(private)" + decorate_chat_msg(username, message)
         private_connections[user].send(message.encode())
         #print("Sent a private message")
@@ -76,9 +96,9 @@ def command_process():
     client_socket.send(command.encode())
 
     if command == "logout":
-      for session in private_connections:
-        private_connections[session].close()
-      privateAcceptSocket.close()
+      # closes all private sockets
+      notify_terminate_connection(private_connections)
+      close_sockets(private_connections)
       CONNECTED = False
 
   print("///")
@@ -86,6 +106,7 @@ def command_process():
 
 
 def recv_handler():
+  """ receives messages coming from the server """
   global client_socket
   global CONNECTED
   global privateConnectSocket
@@ -97,6 +118,8 @@ def recv_handler():
 
     if prompt == "WhatsApp " + username + " logout":
       print("You have been automatically logged out", flush=True)
+      notify_terminate_connection(private_connections)
+      close_sockets(private_connections)
       CONNECTED = False
       break
 
@@ -108,6 +131,9 @@ def recv_handler():
       ip = prompt[-3]
       port = int(prompt[-2])
       target = prompt[-1]
+
+      if target in noLongerOnline:
+        noLongerOnline.remove(target)
 
 
       privateConnectSocket = socket(AF_INET, SOCK_STREAM)
@@ -133,6 +159,9 @@ def recv_handler():
 
       target = prompt[-1]
 
+      if target in noLongerOnline:
+        noLongerOnline.remove(target)
+
       print("You have established a private messaging session with " + target)
       
       privateAcceptorThread = Thread(name="privateAcceptorHandler", target=private_acceptor_handler, args=[target])
@@ -153,37 +182,54 @@ def recv_handler():
 
     print(prompt, flush=True)
 
-def private_acceptor_handler(target):
-  """"""
+def private_acceptor_handler(name):
+  """ accept a connection from another client and receives private message from it
+      , this function is called by the acceptor of the session
+  """
   connectionSocket, connectionAddr = privateAcceptSocket.accept()
   #print("private acceptor receive connection from " + str(connectionAddr))
   # acceptor can use this socket to send to the initializer of this
   # private messaging session.
-  private_connections[target] = connectionSocket
+  private_connections[name] = connectionSocket
   
   while (1):
 
     msg = connectionSocket.recv(2048)
-    if len(msg) == 0:
+    msg = msg.decode()
+    print(msg == "WhatsApp terminate connection")
+    if msg == "WhatsApp terminate connection":
+      print("...")
+      print(msg)
+      noLongerOnline.add(name)
+      connectionSocket.close()
+      break
+    elif len(msg) == 0:
       break
     #print("Received a msg")
 
-    print(msg.decode())
+    print(msg)
 
 
 def private_initializer_handler(name):
-  """ receive message from a particular user in private messaging
-      session
+  """ receive message from a particular user in private messaging session,
+      this function is called by the initializer of the session.
   """
   #print(private_connections)
   private_acceptor_socket = private_connections[name]
-
   while (1):
     msg = private_acceptor_socket.recv(2048)
-    if len(msg) == 0:
+    msg = msg.decode()
+    print(msg == "WhatsApp terminate connection")
+    if msg == "WhatsApp terminate connection":
+      print("...")
+      noLongerOnline.add(name)
+      print(msg)
+      private_acceptor_socket.close()
+      break
+    elif len(msg) == 0:
       break
 
-    print(msg.decode())
+    print(msg)
 
 
 # creates the client's socket
@@ -194,6 +240,9 @@ client_socket.connect((server_IP, server_port))
 # stores all current private chat sockets with other users in the
 # format {user1: socket1, user2: socket2, ...}
 private_connections = {}
+
+# stores a set of private chat clients that're not online anymore
+noLongerOnline = set()
 
 # initialize the username of this client as a global variable
 username = ""
@@ -211,3 +260,7 @@ recvThread.daemon = True
 recvThread.start()
 
 command_process()
+
+# closes remaining sockets
+client_socket.close()
+privateAcceptSocket.close()
